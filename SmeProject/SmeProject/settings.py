@@ -10,22 +10,27 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env (development only)
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-an54a#ydk@j=yd^l9ul=0v!8i_^*-&c07yj8hp0wqn+uz+=8bj'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-an54a#ydk@j=yd^l9ul=0v!8i_^*-&c07yj8hp0wqn+uz+=8bj')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost').split(',')
 
 
 # Application definition
@@ -40,8 +45,15 @@ INSTALLED_APPS = [
     'rest_framework',
     'django_celery_beat',
     'django_celery_results',
+    'django_filters',
+    'apps.core',
+    'apps.accounts',
+    'apps.inventory',
     'SmeApp',
 ]
+
+# Use custom user model
+AUTH_USER_MODEL = 'apps.accounts.User'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -49,6 +61,13 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
+    'PAGE_SIZE': int(os.environ.get('DJANGO_PAGINATION_PAGE_SIZE', 25)),
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
     ],
 }
 
@@ -88,13 +107,17 @@ WSGI_APPLICATION = 'SmeProject.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'inventory_db',
-        'USER': 'postgres',
-        'PASSWORD': 'password',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': os.environ.get('POSTGRES_DB', 'inventory_db'),
+        'USER': os.environ.get('POSTGRES_USER', 'postgres'),
+        'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'password'),
+        'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
+        'PORT': os.environ.get('POSTGRES_PORT', '5432'),
     }
 }
+
+# Redis configuration
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0')
+REDIS_CACHE_URL = os.environ.get('REDIS_CACHE_URL', 'redis://127.0.0.1:6379/1')
 
 # Cache Configuration (Redis)
 # https://docs.djangoproject.com/en/5.2/topics/cache/#redis
@@ -102,7 +125,7 @@ DATABASES = {
 CACHES = {
     'default': {
         'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'LOCATION': REDIS_CACHE_URL,
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
             'SOCKET_CONNECT_TIMEOUT': 5,
@@ -114,22 +137,22 @@ CACHES = {
 }
 
 # Cache timeout settings (in seconds)
-CACHE_TIMEOUT_PRODUCT_LIST = 300  # 5 minutes
-CACHE_TIMEOUT_DASHBOARD = 600     # 10 minutes
-CACHE_TIMEOUT_TOP_PRODUCTS = 3600 # 1 hour
+CACHE_TIMEOUT_PRODUCT_LIST = int(os.environ.get('CACHE_TIMEOUT_PRODUCT_LIST', 300))  # 5 minutes
+CACHE_TIMEOUT_DASHBOARD = int(os.environ.get('CACHE_TIMEOUT_DASHBOARD', 600))     # 10 minutes
+CACHE_TIMEOUT_TOP_PRODUCTS = int(os.environ.get('CACHE_TIMEOUT_TOP_PRODUCTS', 3600)) # 1 hour
 
 
 # Celery Configuration
 # https://docs.celeryproject.io/en/stable/django/first-steps-django.html
 
-CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'
-CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/0'
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', REDIS_URL)
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', REDIS_URL)
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'UTC'
+CELERY_TIMEZONE = os.environ.get('CELERY_TIMEZONE', 'UTC')
 CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+CELERY_TASK_TIME_LIMIT = int(os.environ.get('CELERY_TASK_TIME_LIMIT', 30 * 60))  # 30 minutes
 
 # Celery Beat Scheduler
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
