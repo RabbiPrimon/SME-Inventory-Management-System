@@ -38,6 +38,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'django_celery_beat',
+    'django_celery_results',
     'SmeApp',
 ]
 
@@ -115,6 +117,33 @@ CACHES = {
 CACHE_TIMEOUT_PRODUCT_LIST = 300  # 5 minutes
 CACHE_TIMEOUT_DASHBOARD = 600     # 10 minutes
 CACHE_TIMEOUT_TOP_PRODUCTS = 3600 # 1 hour
+
+
+# Celery Configuration
+# https://docs.celeryproject.io/en/stable/django/first-steps-django.html
+
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'
+CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+
+# Celery Beat Scheduler
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Email Configuration (for notifications)
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Console for development
+# For production, use:
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'your-email@gmail.com'
+EMAIL_HOST_PASSWORD = 'your-app-password'
+DEFAULT_FROM_EMAIL = 'noreply@smeinventory.com'
 
 
 # Password validation

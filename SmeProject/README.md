@@ -26,10 +26,11 @@ A comprehensive Django REST API for managing inventory, products, suppliers, cat
 10. [API Endpoints](#api-endpoints)
 11. [API Examples](#api-examples)
 12. [Redis Caching](#redis-caching)
-13. [Admin Interface](#admin-interface)
-14. [Testing](#testing)
-15. [Troubleshooting](#troubleshooting)
-16. [Development Notes](#development-notes)
+13. [Celery Background Tasks](#celery-background-tasks)
+14. [Admin Interface](#admin-interface)
+15. [Testing](#testing)
+16. [Troubleshooting](#troubleshooting)
+17. [Development Notes](#development-notes)
 
 ---
 
@@ -50,6 +51,7 @@ The SME Inventory Management System is a REST API built with Django and Django R
 - ✅ **JWT Authentication**: Secure API access with JWT tokens
 - ✅ **Admin Dashboard**: Django admin interface for management
 - ✅ **Redis Caching**: High-performance caching for frequently accessed data
+- ✅ **Background Tasks**: Celery for asynchronous processing (alerts, reports, analytics)
 - ✅ **Analytics**: Top-selling products and dashboard statistics
 - ✅ **RESTful Design**: Standard HTTP methods for CRUD operations
 
@@ -105,6 +107,10 @@ e:\Projects\SME-Inventory-Management-System\SmeProject/
 - psycopg2-binary 2.9.12 (for PostgreSQL support)
 - redis 4.0.0+ (for caching)
 - django-redis 5.2.0+ (for Django cache backend)
+- celery 5.3.0+ (for background tasks)
+- django-celery-beat 2.5.0+ (for scheduled tasks)
+- django-celery-results 2.5.0+ (for task results)
+- reportlab 4.0.0+ (for PDF reports)
 
 ---
 
@@ -1208,6 +1214,297 @@ maxmemory-policy allkeys-lru
 ```python
 CACHE_TIMEOUT_PRODUCT_LIST = 120  # 2 minutes instead of 5
 ```
+
+---
+
+## Celery Background Tasks
+
+The SME Inventory Management System uses **Celery** for asynchronous background task processing. This enables long-running operations to execute without blocking API responses.
+
+### Background Tasks
+
+The system includes three main background tasks:
+
+#### 1. Low-Stock Alert (Daily at 08:00 AM UTC)
+
+Checks all products where stock ≤ reorder_level and sends email alerts to admin.
+
+**Example notification:**
+```
+Subject: Low Stock Alert - 5 Products
+
+The following products have fallen below their reorder level:
+- Wireless Mouse (Current: 8, Reorder Level: 25)
+- USB Cable (Current: 5, Reorder Level: 10)
+```
+
+#### 2. Weekly Report (Every Monday at 09:00 AM UTC)
+
+Generates a comprehensive PDF report including:
+- Inventory statistics
+- Order metrics
+- Revenue calculations
+- Top-selling products
+
+Sends via email to admin.
+
+#### 3. Sales Analytics (Every Hour)
+
+Calculates and caches:
+- Daily/weekly/monthly revenue metrics
+- Order patterns
+- Top categories and suppliers
+- Average order values
+
+### Installation & Setup
+
+#### Step 1: Ensure Redis is Running
+
+```bash
+redis-cli ping
+# Should return: PONG
+```
+
+If Redis is not running, start it:
+```bash
+redis-server  # or use WSL/Docker setup from REDIS_SETUP.md
+```
+
+#### Step 2: Apply Celery Migrations
+
+```bash
+python manage.py migrate django_celery_beat
+python manage.py migrate django_celery_results
+```
+
+#### Step 3: Verify Celery Configuration
+
+Run the test script:
+```bash
+python test_celery.py
+```
+
+**Expected output:**
+```
+================================================================================
+CELERY TEST SUITE
+================================================================================
+
+[TEST 1] Celery Configuration
+✓ Celery configuration: PASSED
+
+[TEST 2] Simple Task Test
+✓ Simple task execution: PASSED
+
+[TEST 3] Low Stock Alert Task
+✓ Low stock alert task: REGISTERED
+
+...
+
+✓ All tests passed!
+```
+
+### Running Celery
+
+#### Option 1: Worker Only
+
+Execute queued tasks:
+
+```bash
+celery -A SmeProject worker -l info
+```
+
+#### Option 2: Beat Scheduler Only
+
+Trigger periodic tasks on schedule:
+
+```bash
+celery -A SmeProject beat -l info
+```
+
+#### Option 3: Combined (Development Only)
+
+Run both worker and beat in one process:
+
+```bash
+celery -A SmeProject worker -B -l info
+```
+
+**Output:**
+```
+ ---------- celery@COMPUTER v5.6.3 (emi)
+--- ***** -----
+-- ******* ----
+
+[tasks]
+  . tasks.check_low_stock_and_alert (daily at 08:00 UTC)
+  . tasks.calculate_sales_analytics (every 1 hour)
+  . tasks.generate_weekly_report (monday at 09:00 UTC)
+
+[2026-06-13 10:30:00,000: INFO/MainProcess] celery@COMPUTER ready.
+```
+
+### Celery Configuration
+
+Current settings in `SmeProject/settings.py`:
+
+```python
+# Celery Configuration
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'
+CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+
+# Celery Beat Scheduler
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Email Configuration (Development: console output)
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+```
+
+### Email Configuration
+
+#### Development Mode (Console)
+
+Emails print to console. No configuration needed.
+
+#### Production Mode (Gmail SMTP)
+
+Update `SmeProject/settings.py`:
+
+```python
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'your-email@gmail.com'
+EMAIL_HOST_PASSWORD = 'your-app-password'  # See Gmail App Passwords
+DEFAULT_FROM_EMAIL = 'noreply@smeinventory.com'
+```
+
+**Getting Gmail App Password:**
+1. Enable 2-Factor Authentication on Gmail
+2. Visit https://myaccount.google.com/apppasswords
+3. Select "Mail" and "Windows Computer"
+4. Use the generated 16-character password
+
+### Managing Scheduled Tasks
+
+#### View All Periodic Tasks
+
+```python
+from django_celery_beat.models import PeriodicTask
+PeriodicTask.objects.all()
+```
+
+#### Disable a Task
+
+```python
+task = PeriodicTask.objects.get(name='check_low_stock_and_alert')
+task.enabled = False
+task.save()
+```
+
+#### Enable a Task
+
+```python
+task = PeriodicTask.objects.get(name='check_low_stock_and_alert')
+task.enabled = True
+task.save()
+```
+
+### Monitoring Tasks
+
+#### View Task Events (Real-time)
+
+```bash
+celery -A SmeProject events
+```
+
+#### Check Task Status
+
+```python
+from celery.result import AsyncResult
+
+task = AsyncResult('task-id')
+print(task.status)  # 'PENDING', 'STARTED', 'SUCCESS', 'FAILURE'
+print(task.result)  # Result or exception
+```
+
+### Testing Tasks
+
+#### Test Task Execution
+
+```python
+from SmeApp.tasks import test_task
+
+# Run immediately (synchronous)
+result = test_task('Hello')
+print(result)
+
+# Queue for worker (asynchronous)
+task = test_task.delay('Hello')
+print(task.id, task.status)
+```
+
+#### Test Low Stock Alert
+
+```python
+from SmeApp.tasks import check_low_stock_and_alert
+
+result = check_low_stock_and_alert()
+print(result)  # {'status': 'success', 'low_stock_count': 3, ...}
+```
+
+#### Test Weekly Report
+
+```python
+from SmeApp.tasks import generate_weekly_report
+
+result = generate_weekly_report()
+print(result)  # {'status': 'success', 'report_data': {...}}
+```
+
+### Production Deployment
+
+For production, run worker and beat separately with auto-restart:
+
+**Using Supervisor:**
+
+```ini
+[program:celery_worker]
+command=celery -A SmeProject worker -l info
+autorestart=true
+redirect_stderr=true
+
+[program:celery_beat]
+command=celery -A SmeProject beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+autorestart=true
+redirect_stderr=true
+```
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "Connection refused Redis" | Start Redis: `redis-server` |
+| "No module named celery" | Run: `pip install -r requirements.txt` |
+| Tasks not running | Verify worker is running: `celery -A SmeProject worker -l info` |
+| Tasks not on schedule | Start Beat: `celery -A SmeProject beat -l info` |
+| Emails not sending | Check `EMAIL_BACKEND` setting and SMTP credentials |
+
+### Further Documentation
+
+See [CELERY_SETUP.md](CELERY_SETUP.md) for:
+- Detailed installation instructions
+- Advanced configuration
+- Process manager setup
+- Monitoring and debugging
+- Production deployment guide
 
 ---
 
