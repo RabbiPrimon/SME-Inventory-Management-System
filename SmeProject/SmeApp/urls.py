@@ -8,6 +8,8 @@ from .views import (
     OrderListCreateView,
     OrderDetailView,
     LowStockAlertsView,
+    DashboardView,
+    TopSellingProductsView,
 )
 
 urlpatterns = [
@@ -18,4 +20,6 @@ urlpatterns = [
     path('orders/', OrderListCreateView.as_view(), name='order-list-create'),
     path('orders/<int:pk>/', OrderDetailView.as_view(), name='order-detail'),
     path('alerts/low-stock/', LowStockAlertsView.as_view(), name='low-stock-alerts'),
+    path('dashboard/', DashboardView.as_view(), name='dashboard'),
+    path('analytics/top-products/', TopSellingProductsView.as_view(), name='top-selling-products'),
 ]

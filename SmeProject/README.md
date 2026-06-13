@@ -25,10 +25,11 @@ A comprehensive Django REST API for managing inventory, products, suppliers, cat
 9. [Authentication](#authentication)
 10. [API Endpoints](#api-endpoints)
 11. [API Examples](#api-examples)
-12. [Admin Interface](#admin-interface)
-13. [Testing](#testing)
-14. [Troubleshooting](#troubleshooting)
-15. [Development Notes](#development-notes)
+12. [Redis Caching](#redis-caching)
+13. [Admin Interface](#admin-interface)
+14. [Testing](#testing)
+15. [Troubleshooting](#troubleshooting)
+16. [Development Notes](#development-notes)
 
 ---
 
@@ -48,6 +49,8 @@ The SME Inventory Management System is a REST API built with Django and Django R
 - ✅ **Order Management**: Create and manage orders with multiple items
 - ✅ **JWT Authentication**: Secure API access with JWT tokens
 - ✅ **Admin Dashboard**: Django admin interface for management
+- ✅ **Redis Caching**: High-performance caching for frequently accessed data
+- ✅ **Analytics**: Top-selling products and dashboard statistics
 - ✅ **RESTful Design**: Standard HTTP methods for CRUD operations
 
 ---
@@ -100,6 +103,8 @@ e:\Projects\SME-Inventory-Management-System\SmeProject/
 - Django REST Framework 3.17.1
 - djangorestframework-simplejwt 5.5.1
 - psycopg2-binary 2.9.12 (for PostgreSQL support)
+- redis 4.0.0+ (for caching)
+- django-redis 5.2.0+ (for Django cache backend)
 
 ---
 
@@ -461,7 +466,14 @@ All endpoints require JWT authentication (except `/api/token/` for obtaining tok
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/alerts/low-stock/` | Get products with low stock |
+| GET | `/api/alerts/low-stock/` | Get products with low stock (cached 5 min) |
+
+### Dashboard & Analytics
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/dashboard/` | Dashboard with inventory statistics (cached 10 min) |
+| GET | `/api/analytics/top-products/` | Top selling products (cached 1 hour) |
 
 ---
 
@@ -819,6 +831,382 @@ curl -X GET http://127.0.0.1:8000/api/alerts/low-stock/ \
     "is_low_stock": true
   }
 ]
+```
+
+---
+
+## Redis Caching
+
+The SME Inventory Management System uses **Redis** for high-performance caching of frequently accessed data. This dramatically improves API response times and reduces database load.
+
+### What is Redis?
+
+Redis is an in-memory data store that acts as a cache. Instead of querying the database every time for the same data, Redis stores the result in memory for quick retrieval (typically <1ms vs. 10-100ms for database queries).
+
+### Caching Strategy
+
+The following endpoints are cached with different expiration times:
+
+| Endpoint | Cache Key | Timeout | Use Case |
+|----------|-----------|---------|----------|
+| `GET /api/products/` | `product_list` | 5 minutes | Frequently accessed product listing |
+| `GET /api/orders/` | `order_list` | 5 minutes | Recent order data |
+| `GET /api/alerts/low-stock/` | `low_stock_alerts` | 5 minutes | Real-time inventory alerts |
+| `GET /api/dashboard/` | `dashboard_data` | 10 minutes | Dashboard statistics |
+| `GET /api/analytics/top-products/` | `top_selling_products` | 1 hour | Historical sales data (changes slowly) |
+
+### Cache Invalidation
+
+Cache is **automatically cleared** when data changes:
+
+- Creating a new product → Clears product list, dashboard, and top products caches
+- Updating a product → Clears product list, dashboard, and top products caches
+- Deleting a product → Clears product list, dashboard, and top products caches
+- Creating an order → Clears dashboard and top products caches
+
+### Installation & Setup
+
+#### Step 1: Install Redis
+
+See [REDIS_SETUP.md](REDIS_SETUP.md) for detailed installation instructions for:
+- Windows Subsystem for Linux (WSL)
+- Memurai Redis for Windows
+- Docker
+- Manual installation
+
+#### Step 2: Start Redis Server
+
+**Option 1: WSL**
+```bash
+wsl redis-server
+```
+
+**Option 2: Memurai**
+```powershell
+redis-server
+# Or as Windows service (auto-starts)
+```
+
+**Option 3: Docker**
+```bash
+docker run -d -p 6379:6379 redis:latest
+```
+
+#### Step 3: Verify Redis is Running
+
+```bash
+redis-cli ping
+# Should respond: PONG
+```
+
+#### Step 4: Test Cache Setup
+
+Run the included test script:
+
+```bash
+python test_cache.py
+```
+
+Expected output:
+```
+================================================================================
+REDIS CACHING TEST SUITE
+================================================================================
+
+[TEST 1] Basic Cache Operations
+✓ Cache SET operation: PASSED
+✓ Cache GET operation: PASSED
+✓ Cache DELETE operation: PASSED
+
+[TEST 2] Cache Expiration
+✓ Cache expiration: PASSED
+
+[TEST 3] Cache with Different Data Types
+✓ String caching: PASSED
+✓ Integer caching: PASSED
+✓ List caching: PASSED
+✓ Dictionary caching: PASSED
+
+[TEST 4] API Cache Simulation
+✓ Product list caching: PASSED (42 products cached)
+✓ Dashboard caching: PASSED
+
+[TEST 5] Clear All Cache
+✓ Cache clear: PASSED
+
+================================================================================
+REDIS CACHING TEST SUITE COMPLETED
+================================================================================
+
+✓ All cache tests completed successfully!
+✓ Redis caching is properly configured and working!
+```
+
+### Configuration
+
+Redis configuration in `SmeProject/settings.py`:
+
+```python
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'SOCKET_CONNECT_TIMEOUT': 5,
+            'SOCKET_TIMEOUT': 5,
+            'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+            'IGNORE_EXCEPTIONS': True,  # Fallback to DB if Redis unavailable
+        }
+    }
+}
+
+# Cache timeout settings (in seconds)
+CACHE_TIMEOUT_PRODUCT_LIST = 300   # 5 minutes
+CACHE_TIMEOUT_DASHBOARD = 600      # 10 minutes
+CACHE_TIMEOUT_TOP_PRODUCTS = 3600  # 1 hour
+```
+
+### API Endpoints with Caching
+
+#### 1. New Dashboard Endpoint
+
+**Endpoint**: `GET /api/dashboard/`
+
+**Cache**: 10 minutes
+
+**Response**:
+```json
+{
+  "overview": {
+    "total_products": 42,
+    "total_categories": 5,
+    "total_suppliers": 8,
+    "low_stock_alerts": 3
+  },
+  "inventory": {
+    "total_stock_value": 15000.50
+  },
+  "orders": {
+    "total_orders": 156,
+    "pending_orders": 12,
+    "completed_orders": 144,
+    "completion_rate": 92.31
+  }
+}
+```
+
+**Example Request**:
+```bash
+curl -X GET http://127.0.0.1:8000/api/dashboard/ \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### 2. New Top Selling Products Endpoint
+
+**Endpoint**: `GET /api/analytics/top-products/`
+
+**Cache**: 1 hour
+
+**Response**:
+```json
+[
+  {
+    "id": 1,
+    "name": "Wireless Mouse",
+    "category": { "id": 1, "name": "Electronics" },
+    "supplier": { "id": 1, "name": "Acme Electronics" },
+    "price": "29.99",
+    "stock": 150,
+    "reorder_level": 25,
+    "created_at": "2026-06-13T10:30:00Z",
+    "is_low_stock": false,
+    "total_ordered": 245
+  },
+  {
+    "id": 2,
+    "name": "Keyboard",
+    "category": { "id": 1, "name": "Electronics" },
+    "supplier": { "id": 1, "name": "Acme Electronics" },
+    "price": "49.99",
+    "stock": 75,
+    "reorder_level": 15,
+    "created_at": "2026-06-13T10:31:00Z",
+    "is_low_stock": false,
+    "total_ordered": 189
+  }
+]
+```
+
+**Example Request**:
+```bash
+curl -X GET http://127.0.0.1:8000/api/analytics/top-products/ \
+  -H "Authorization: Bearer <access_token>"
+```
+
+### Cache Fallback Behavior
+
+If Redis is unavailable, the application gracefully falls back to direct database queries:
+
+```python
+'IGNORE_EXCEPTIONS': True  # In settings.py
+```
+
+This means:
+- ✅ API continues to work even if Redis is down
+- ⚠️ Performance degrades (database queries instead of cached results)
+- ✅ No data loss or errors
+
+**Production Note**: Set `'IGNORE_EXCEPTIONS': False` in production to receive alerts when Redis is unavailable.
+
+### Monitoring Cache Performance
+
+#### View Cache Keys
+
+```bash
+redis-cli KEYS "*"
+```
+
+#### Check Cache Size
+
+```bash
+redis-cli INFO memory
+```
+
+#### Monitor Real-time Cache Operations
+
+```bash
+redis-cli MONITOR
+```
+
+Then make API requests to see cache hits/misses in real-time.
+
+#### Clear All Cache
+
+```bash
+# Using redis-cli
+redis-cli FLUSHDB
+
+# Using Django shell
+python manage.py shell
+>>> from django.core.cache import cache
+>>> cache.clear()
+```
+
+### Cache Hit Rate Analysis
+
+Monitor cache effectiveness:
+
+```bash
+# In Python/Django shell
+from django.core.cache import cache
+
+# Get cache statistics
+info = cache.get_client().info()
+print(f"Hits: {info['keyspace_hits']}")
+print(f"Misses: {info['keyspace_misses']}")
+print(f"Hit Rate: {info['keyspace_hits'] / (info['keyspace_hits'] + info['keyspace_misses']) * 100:.2f}%")
+```
+
+### Advanced: Custom Cache Decorators
+
+For custom endpoints, use cache decorators:
+
+```python
+from django.views.decorators.cache import cache_page
+from django.utils.decorators import method_decorator
+
+class MyView(APIView):
+    @method_decorator(cache_page(300))  # Cache for 5 minutes
+    def get(self, request):
+        # This response will be cached
+        return Response(data)
+```
+
+Or with cache.set/get:
+
+```python
+from django.core.cache import cache
+
+def my_view(request):
+    cache_key = 'my_custom_key'
+    data = cache.get(cache_key)
+    
+    if data is None:
+        # Not in cache, fetch from database
+        data = expensive_query()
+        # Store in cache for 5 minutes
+        cache.set(cache_key, data, 300)
+    
+    return Response(data)
+```
+
+### Troubleshooting
+
+#### "Connection refused" on Redis
+
+**Cause**: Redis server not running
+
+**Solution**:
+```bash
+# Check if Redis is running
+redis-cli ping
+
+# If not, start Redis
+redis-server
+```
+
+#### Cache not working
+
+**Check 1**: Verify Redis is running
+```bash
+redis-cli ping
+# Should return: PONG
+```
+
+**Check 2**: Check Django cache configuration
+```bash
+python manage.py shell
+>>> from django.core.cache import cache
+>>> cache.set('test', 'value', 10)
+>>> cache.get('test')
+'value'
+```
+
+**Check 3**: Enable cache debugging
+```python
+# In settings.py
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'django_redis': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+        },
+    },
+}
+```
+
+#### Memory issues
+
+**Cause**: Redis running out of memory
+
+**Solution 1**: Increase Redis max memory
+```bash
+# In redis.conf
+maxmemory 512mb
+maxmemory-policy allkeys-lru
+```
+
+**Solution 2**: Reduce cache timeouts
+```python
+CACHE_TIMEOUT_PRODUCT_LIST = 120  # 2 minutes instead of 5
 ```
 
 ---

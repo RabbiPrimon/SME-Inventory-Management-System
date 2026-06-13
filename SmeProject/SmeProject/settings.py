@@ -94,6 +94,28 @@ DATABASES = {
     }
 }
 
+# Cache Configuration (Redis)
+# https://docs.djangoproject.com/en/5.2/topics/cache/#redis
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'SOCKET_CONNECT_TIMEOUT': 5,
+            'SOCKET_TIMEOUT': 5,
+            'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+            'IGNORE_EXCEPTIONS': True,  # Fallback to database if Redis is unavailable
+        }
+    }
+}
+
+# Cache timeout settings (in seconds)
+CACHE_TIMEOUT_PRODUCT_LIST = 300  # 5 minutes
+CACHE_TIMEOUT_DASHBOARD = 600     # 10 minutes
+CACHE_TIMEOUT_TOP_PRODUCTS = 3600 # 1 hour
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
