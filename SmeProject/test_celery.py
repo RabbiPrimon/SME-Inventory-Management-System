@@ -198,3 +198,10 @@ print("-" * 80)
 print("  celery -A SmeProject worker -B -l info")
 
 print("\n" + "=" * 80)
+
+
+def main():
+    pass
+
+if __name__ == '__main__':
+    main()

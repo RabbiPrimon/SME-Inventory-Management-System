@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -46,14 +47,8 @@ INSTALLED_APPS = [
     'django_celery_beat',
     'django_celery_results',
     'django_filters',
-    'apps.core',
-    'apps.accounts',
-    'apps.inventory',
     'SmeApp',
 ]
-
-# Use custom user model
-AUTH_USER_MODEL = 'apps.accounts.User'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -115,6 +110,13 @@ DATABASES = {
     }
 }
 
+# Use SQLite for Django test runs if PostgreSQL is unavailable in local environments.
+if 'test' in sys.argv:
+    DATABASES['default'] = {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db_test.sqlite3',
+    }
+
 # Redis configuration
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0')
 REDIS_CACHE_URL = os.environ.get('REDIS_CACHE_URL', 'redis://127.0.0.1:6379/1')
@@ -135,6 +137,13 @@ CACHES = {
         }
     }
 }
+# Use in-memory cache during tests to avoid external Redis dependency.
+if 'test' in sys.argv:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        }
+    }
 
 # Cache timeout settings (in seconds)
 CACHE_TIMEOUT_PRODUCT_LIST = int(os.environ.get('CACHE_TIMEOUT_PRODUCT_LIST', 300))  # 5 minutes

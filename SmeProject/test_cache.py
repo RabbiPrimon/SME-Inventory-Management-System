@@ -184,3 +184,10 @@ print(f"Top Products Cache Timeout: {settings.CACHE_TIMEOUT_TOP_PRODUCTS} second
 print("\n✓ All cache tests completed successfully!")
 print("✓ Redis caching is properly configured and working!")
 print("\n" + "=" * 80)
+
+
+def main():
+    pass
+
+if __name__ == '__main__':
+    main()

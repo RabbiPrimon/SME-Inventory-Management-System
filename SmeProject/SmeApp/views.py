@@ -25,14 +25,10 @@ class SupplierListCreateView(generics.ListCreateAPIView):
     serializer_class = SupplierSerializer
 
 
+@method_decorator(cache_page(300), name='dispatch')
 class ProductListCreateView(generics.ListCreateAPIView):
     queryset = Product.objects.select_related('category', 'supplier').all()
     serializer_class = ProductSerializer
-
-    @method_decorator(cache_page(300))  # Cache for 5 minutes
-    def get(self, request, *args, **kwargs):
-        """List all products with caching enabled"""
-        return super().get(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
         """Create product and clear cache"""
@@ -72,14 +68,11 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
         return response
 
 
+
+@method_decorator(cache_page(300), name='dispatch')
 class OrderListCreateView(generics.ListCreateAPIView):
     queryset = Order.objects.prefetch_related('items__product').all()
     serializer_class = OrderSerializer
-
-    @method_decorator(cache_page(300))  # Cache for 5 minutes
-    def get(self, request, *args, **kwargs):
-        """List all orders with caching enabled"""
-        return super().get(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
         """Create order and clear cache"""
